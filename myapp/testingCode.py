@@ -38,3 +38,5 @@ def univerisityName():
 univerisityName()
 print (university)
 print("univeristy name has been printed")
+#print("University name: ")+university
+print("university name: {}".format(university))

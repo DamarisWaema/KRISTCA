@@ -20,23 +20,28 @@ from nltk.corpus import stopwords
 from sklearn.feature_extraction import text
 
 #items required for clustering
-searchString = "Computing"
+searchString = "text clustering"
 dbTablesToCluster = ["Researchers", "ResearchProjects", "UpcomingEvents"]
 CVsToClusterFolder = "D:/IRS/KRIS/public/storage/CVs"
 researchPapersToClusterFolder = "D:/IRS/KRIS/public/storage/ResearchPapers"
 docsToCluster=[]
 researchPapersToClusterList=[]
 researchersToCluster=[]
+fundingOpportunitiesToCluster=[]
+FOpportunitiesToCluster=[]
 i=1
 top10WordsPerCluster=[]
 top10WordsPerResearcherCluster=[]
-
+top10WordsPerFundingOpportunityCluster=[]
 textDoClusters=[]
 researchersClusters=[]
+fundingOpportunitiesClusters=[]
 relevantDocClusterIndices=[]
 relevantResearchersClusterIndices=[]
+relevantFundingOpportunitiesClusterIndices=[]
 rankedRelevantResearchPapersToReturn=[]
 rankedRelevantResearchersToReturn=[]
+rankedRelevantFundingOpportunitiesToReturn=[]
 #function to get list of files from a folder
 def list_files(directory, extension):
         return (f for f in listdir (directory) if f.endswith ('.' + extension))
@@ -94,7 +99,6 @@ def rankRelevantResearchPapers():
 
 def rankRelevantResearchers():
     print('BEGINNING OF RANKING AND DISPLAYING RELEVANT RESEARCHERS')
-    print ("BEGINNING OF RANKING RESEARCH PAPERS")
     researchersToRank = []
     searchStringWithoutStopWords = removeStopWords (searchString)
     indicesForRelevantResearchers = []
@@ -130,10 +134,48 @@ def rankRelevantResearchers():
 
     print ('Done Ranking Relevant Researchers')
 
+def rankRelevantFundingOpportunities():
+    print ('BEGINNING OF RANKING RELEVANT FUNDING OPPORTUNITIES')
+    fundingOpportunitiesToRank = []
+    searchStringWithoutStopWords = removeStopWords (searchString)
+    indicesForRelevantFundingOpportunities = []
+    for clusterIndex in relevantFundingOpportunitiesClusterIndices:
+        cluster = np.where (fundingOpportunitiesClusters == clusterIndex)  # don't forget import numpy as np
+        clusterNFundingOpportunityindices = cluster[0]
+
+        for index in clusterNFundingOpportunityindices:
+            fundingOpportunitiesToRank.append (fundingOpportunitiesToCluster[index])
+            indicesForRelevantFundingOpportunities.append (index)
+
+    x = len (fundingOpportunitiesToRank)
+    fundingOpportunitiesToRank.append (searchStringWithoutStopWords)
+    tfidf_vectorizer = TfidfVectorizer (stop_words='english')
+    fundingOpportunitiesToRank_tfidf_matrix = tfidf_vectorizer.fit_transform (fundingOpportunitiesToRank)
+    similarityMeasure = cosine_similarity (fundingOpportunitiesToRank_tfidf_matrix[x], fundingOpportunitiesToRank_tfidf_matrix).tolist ()
+    SimilarityMeasureAsSingleList = similarityMeasure[0]
+    SimilarityMeasureAsSingleList.pop ()
+    relevantFundingOpportunityIndices = []
+    smi = 0
+    while (smi < len (SimilarityMeasureAsSingleList)):
+        if SimilarityMeasureAsSingleList[smi] > 0:
+            relevantFundingOpportunityIndices.append (indicesForRelevantFundingOpportunities[smi])
+        smi = smi + 1
+    "Cluster indices for relevant clusters"
+    print (relevantFundingOpportunityIndices)
+
+    sortedRelevantResearchersIndices = sorted (relevantFundingOpportunityIndices, reverse=True)
+    print (sortedRelevantResearchersIndices)
+    for index in sortedRelevantResearchersIndices:
+        rankedRelevantFundingOpportunitiesToReturn.append (fundingOpportunitiesToCluster[index])
+
+    print ('Done Ranking Relevant Funding Opportunities')
 
 def rankingAlgorithm():
+    print("Ranking Portion of The Algorithm")
     rankRelevantResearchPapers()
     rankRelevantResearchers()
+    rankRelevantFundingOpportunities()
+
 
 def multiLevelTextLusteringAlgorithm():
     print("THIS ALGORITHM SHOULD CLUSTER BOTH SQL DATA AND TEXT DOCUMENTS")
@@ -143,6 +185,7 @@ def multiLevelTextLusteringAlgorithm():
     #textdocClusteringUsingMiniBatchKMeans()
 
 def clusterResearchers():
+    print()
     print("RESULTS OF CLUSTERING RESEARCHERS")
     numberOfClusters = 6
     connection = mysql.connector.connect (host='127.0.0.1', user='root', password='', database='TESTKRIS')
@@ -190,7 +233,7 @@ def clusterResearchers():
     terms = vectorizer.get_feature_names ()
     for i in range (5):
         topWords = ""
-        print ("Cluster %d:" % i, )
+        #print ("Cluster %d:" % i, )
         x = 1
         for ind in order_centroids[i, :10]:
             if (topWords == ""):
@@ -199,8 +242,8 @@ def clusterResearchers():
             else:
                 topWords = topWords + " " + terms[ind]
 
-            print (' %s' % terms[ind], )
-            print ()
+            #print (' %s' % terms[ind], )
+            #print ()
 
             if (x == 10):
                 top10WordsPerResearcherCluster.append (topWords)
@@ -209,9 +252,80 @@ def clusterResearchers():
             x = x + 1
     print ("Done getting top ten words in researcher clusters as documents")
 
+def clusterFundingOpportunities():
+    print ()
+
+    print ("RESULTS OF CLUSTERING FUNDING OPPORTUNITIES")
+    numberOfClusters = 4
+    connection = mysql.connector.connect (host='127.0.0.1', user='root', password='', database='TESTKRIS')
+    cursor = connection.cursor ()
+    query = (
+        "SELECT FunderName, ResearchAreasFunded FROM FundingOpportunities INNER JOIN Funders on FundingOpportunities.Funder_ID = Funders.Funder_ID ")
+    cursor.execute (query)
+    fundingOpportunities = cursor.fetchall ()
+    for row in fundingOpportunities:
+        fundingOpportunitiesToCluster.append (str (row))
+        # researcher=str(row)
+        # print(researcher)
+    vectorizer = TfidfVectorizer (stop_words='english')
+    X = vectorizer.fit_transform (fundingOpportunitiesToCluster)
+
+    print ("RESULTS OF CLUSTERING FUNDING OPPORTUNITIES USING K-MEANS ALGORITHM")
+    km = sklearn.cluster.KMeans (init='k-means++', max_iter=500, n_init=1,
+                                 verbose=0, n_clusters=numberOfClusters)
+    t1 = time.time ()
+    clusters = km.fit_predict (X)
+    clusteringTime = time.time () - t1
+    global fundingOpportunitiesClusters
+    fundingOpportunitiesClusters = clusters
+    print ("TOTAL TIME TAKEN TO CLUSTER FUNDING OPPORTUNITIES using kmeans: " + str (t1))
+    # Note that your input data has dimensionality m x n and the clusters array has dimensionality m x 1 and contains the indices for every document
+    # print (X.shape)
+    # print (clusters.shape)
+    # Example to get all documents in cluster 0
+    y = 0
+    while y < numberOfClusters:
+        cluster_0 = np.where (clusters == y)  # don't forget import numpy as np
+        cluster0indices = cluster_0[0]
+        print ("Funding Opportunities in cluster " + str (y))
+
+        for clusterindex in cluster0indices:
+            print (fundingOpportunitiesToCluster[clusterindex])
+        y = y + 1
+        print ()
+    # cluster_0 now contains all indices of the documents in this cluster, to get the actual documents you'd do:
+    X_cluster_0 = X[cluster_0]
+    # print(X_cluster_0)
+    # getting top 10 words per researcher cluster
+    print ("TOP TERMS PER CLUSTER:")
+    order_centroids = km.cluster_centers_.argsort ()[:, ::-1]
+    terms = vectorizer.get_feature_names ()
+    for i in range (4):
+        topWords = ""
+        print ("Cluster %d:" % i, )
+        x = 1
+
+        for ind in order_centroids[i, :4]:
+            if (topWords == ""):
+                topWords = topWords + terms[ind]
+
+            else:
+                topWords = topWords + " " + terms[ind]
+
+            # print (' %s' % terms[ind], )
+            # print ()
+
+            if (x == 4):
+                top10WordsPerFundingOpportunityCluster.append (topWords)
+                x = 1
+                print (top10WordsPerFundingOpportunityCluster)
+            x = x + 1
+    print ("Done getting top ten words in Funding Opportunities clusters as documents")
+
 def sqlClusteringAlgorithmUsingKMeans():
     print("RESULTS OF CLUSTERING SQL DATA")
     clusterResearchers()
+    clusterFundingOpportunities()
 
 
 def textDocCluteringUsingKMeansThatPrintsTopWordsPerCluster():
@@ -242,7 +356,7 @@ def matchingResearchPaperClusters():
     x = len (top10WordsPerCluster)
     top10WordsPerCluster.append (searchStringWithoutStopWords)
     clusters_tfidf_matrix = tfidf_vectorizer.fit_transform (top10WordsPerCluster)
-    print (clusters_tfidf_matrix.shape)
+    #print (clusters_tfidf_matrix.shape)
     similarityMeasure = []
     similarityMeasure = cosine_similarity (clusters_tfidf_matrix[x], clusters_tfidf_matrix).tolist ()
     print (top10WordsPerCluster)
@@ -259,13 +373,15 @@ def matchingResearchPaperClusters():
             relevantClusterIndicesForDocs.append (smi)
         smi = smi + 1
     "Cluster indices for relevant clusters"
-    print (relevantClusterIndicesForDocs)
+    #print (relevantClusterIndicesForDocs)
     global relevantDocClusterIndices
     relevantDocClusterIndices = sorted (relevantClusterIndicesForDocs, reverse=True)
+    print("Relevant document cluster indices ")
     print (relevantDocClusterIndices)
     print ("Done Matching Research papers")
 
 def matchingResearcherClusters():
+    print()
     print('BEGINNING OF MATCHING RESEARCHERS')
     searchStringWithoutStopWords = removeStopWords (searchString)
     print ("Matching Using Cosine Similarity Measure")
@@ -273,7 +389,7 @@ def matchingResearcherClusters():
     x = len (top10WordsPerResearcherCluster)
     top10WordsPerResearcherCluster.append (searchStringWithoutStopWords)
     clusters_tfidf_matrix = tfidf_vectorizer.fit_transform (top10WordsPerResearcherCluster)
-    print (clusters_tfidf_matrix.shape)
+    #print (clusters_tfidf_matrix.shape)
     similarityMeasure = []
     similarityMeasure = cosine_similarity (clusters_tfidf_matrix[x], clusters_tfidf_matrix).tolist ()
     print (top10WordsPerResearcherCluster)
@@ -299,22 +415,61 @@ def matchingResearcherClusters():
     print (relevantResearchersClusterIndices)
     print ("Done Matching Researchers")
 
+def matchingFundingOpportunitiesCluster ():
+    print ()
+    print ('BEGINNING OF MATCHING Funding Opportunities')
+    searchStringWithoutStopWords = removeStopWords (searchString)
+    print ("Matching Using Cosine Similarity Measure")
+    tfidf_vectorizer = TfidfVectorizer (stop_words='english')
+    x = len (top10WordsPerFundingOpportunityCluster)
+    top10WordsPerFundingOpportunityCluster.append (searchStringWithoutStopWords)
+    clusters_tfidf_matrix = tfidf_vectorizer.fit_transform (top10WordsPerFundingOpportunityCluster)
+    # print (clusters_tfidf_matrix.shape)
+    similarityMeasure = []
+    similarityMeasure = cosine_similarity (clusters_tfidf_matrix[x], clusters_tfidf_matrix).tolist ()
+    print (top10WordsPerFundingOpportunityCluster)
+    print ("Similarity measure when compared with the user's search string")
+    SimilarityMeasureAsSingleList = similarityMeasure[0]
+    SimilarityMeasureAsSingleList.pop ()
+    sortedSimilarityMeasureAsSingleList = sorted (similarityMeasure[0], reverse=True)
+    print (SimilarityMeasureAsSingleList)
+    print (sortedSimilarityMeasureAsSingleList)
+    relevantFundingOpportunityClusterIndices = []
+    smi = 0
+    while (smi < len (SimilarityMeasureAsSingleList)):
+        if SimilarityMeasureAsSingleList[smi] > 0:
+            relevantFundingOpportunityClusterIndices.append (smi)
+        smi = smi + 1
+    "Cluster indices for relevant clusters"
+    print ("Relevant Researcher Cluster Indices in any order")
+    print (relevantFundingOpportunityClusterIndices)
+    global relevantFundingOpportunitiesClusterIndices
+    relevantFundingOpportunitiesClusterIndices = sorted (relevantFundingOpportunityClusterIndices, reverse=True)
+    print ("Relevant Funding Opportunities Cluster Indices in order of relevance starting with most relevant")
+
+    print (relevantFundingOpportunitiesClusterIndices)
+    print ("Done Matching Funding Opportunities")
 
 def matchingAlgorithm():
     print('BEGINNING OF MATCHING')
     matchingResearchPaperClusters ()
     matchingResearcherClusters()
+    matchingFundingOpportunitiesCluster()
 
 def displaySearchResults():
+    print()
     print ("SEARCH RESULTS")
+
+    print("Search string: {}".format(searchString))
+
     if (len(rankedRelevantResearchersToReturn)==0):
         print('There are no researchers in the database that match your search query')
-        print('')
+        print()
     else:
         print ("Relevant Researchers In Order of relevance")
         for researcher in rankedRelevantResearchersToReturn:
             print (researcher)
-        print('')
+        print()
 
     if(len(rankedRelevantResearchPapersToReturn)==0):
         print('There are no research papers in the database that match your search query')
@@ -325,8 +480,14 @@ def displaySearchResults():
         for paper in rankedRelevantResearchPapersToReturn:
             print (paper)
         print('')
-
+    if(len(rankedRelevantFundingOpportunitiesToReturn)==0):
+        print("There are no Funding Opportunities in the databases that match your search query")
+    else:
+        print("Relevant Funding Opportunities according to your search string")
+        for fundingOpportunity in rankedRelevantFundingOpportunitiesToReturn:
+            print (fundingOpportunity)
 def textDocClusteringUsingKMeans():
+    print()
     vectorizer = TfidfVectorizer(stop_words='english')
     X = vectorizer.fit_transform(docsToCluster)
 
@@ -372,8 +533,8 @@ def textDocClusteringUsingKMeans():
             else:
                 topWords = topWords + " " + terms[ind]
 
-            print (' %s' % terms[ind], )
-            print ()
+            #print (' %s' % terms[ind], )
+            #print ()
 
             if (x == 10):
                 top10WordsPerCluster.append (topWords)
